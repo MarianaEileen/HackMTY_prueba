@@ -1,187 +1,264 @@
-import { Component, ChangeDetectionStrategy, signal, OnDestroy, AfterViewInit, ViewChild, ElementRef, NgZone, inject } from '@angular/core';
+import { Component, ChangeDetectionStrategy, signal, inject, ViewChild, ElementRef, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FlightContextService } from '../../services/flight-context.service';
+import { BrowserMultiFormatReader } from '@zxing/library';
+import { IScannerControls } from '@zxing/browser';
 
-declare var jsQR: any;
-
-interface ProductData {
-  productId: string;
-  name: string;
-  expiryDate: string;
+// Define an interface for the tracked QR object
+interface TrackedQR {
+  text: string;
+  location: {
+    topLeft: { x: number; y: number };
+    topRight: { x: number; y: number };
+    bottomLeft: { x: number; y: number };
+    bottomRight: { x: number; y: number };
+  };
+  status: 'good' | 'warning' | 'expired';
+  lastSeen: number;
 }
 
-type ProductStatus = 'ok' | 'nearing_expiry' | 'expired' | 'invalid' | null;
+// Interface for the overlay data used for rendering
+interface QrOverlay {
+  points: { x: number; y: number }[];
+  color: string;
+}
 
 @Component({
   selector: 'app-expiry-scanner',
   imports: [CommonModule],
-  templateUrl: './expiry-scanner.component.html',
+  templateUrl: './expiry-scanner.component.html', // Use the external template
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class ExpiryScannerComponent implements AfterViewInit, OnDestroy {
-  @ViewChild('video') video!: ElementRef<HTMLVideoElement>;
-  @ViewChild('canvas') canvas!: ElementRef<HTMLCanvasElement>;
-
-  isScanning = signal(false);
-  scanResult = signal<ProductData | null>(null);
-  productStatus = signal<ProductStatus>(null);
-  scanError = signal<string | null>(null);
-  
-  private stream: MediaStream | null = null;
-  private animationFrameId: number | null = null;
+export class ExpiryScannerComponent implements OnDestroy {
+  // Inject services
   private flightContextService = inject(FlightContextService);
 
-  constructor(private ngZone: NgZone) {}
+  // ViewChild elements for video and canvas
+  @ViewChild('videoEl') videoEl!: ElementRef<HTMLVideoElement>;
+  @ViewChild('canvasEl') canvasEl!: ElementRef<HTMLCanvasElement>;
 
-  ngAfterViewInit() {
-    // Component is now ready to start scanning
+  // Component state signals
+  isScanning = signal(false);
+  error = signal<string | null>(null);
+
+  // Private properties for scanner logic
+  private reader = new BrowserMultiFormatReader();
+  private controls: IScannerControls | null = null;
+  private activeQr = signal<TrackedQR | null>(null);
+  private overlay = signal<QrOverlay | null>(null);
+  private animationFrameId: number | null = null;
+  private stream: MediaStream | null = null;
+
+  // Lifecycle hook for cleanup
+  ngOnDestroy(): void {
+    this.stopScan();
   }
 
-  async startScan() {
-    this.scanError.set(null);
-    this.scanResult.set(null);
-    this.productStatus.set(null);
+  async startScan(): Promise<void> {
+    if (this.isScanning() || !this.videoEl) {
+      return;
+    }
 
-    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-      try {
-        this.stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: 'environment' }
-        });
-        this.isScanning.set(true);
-        this.video.nativeElement.srcObject = this.stream;
-        this.video.nativeElement.play();
-        this.ngZone.runOutsideAngular(() => {
-            this.animationFrameId = requestAnimationFrame(() => this.tick());
-        });
-      } catch (err) {
-        console.error("Error accessing camera: ", err);
-        this.scanError.set('Could not access camera. Please grant permission.');
-        this.isScanning.set(false);
+    try {
+      this.error.set(null);
+      this.isScanning.set(true);
+      const videoElement = this.videoEl.nativeElement;
+      
+      this.stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+      videoElement.srcObject = this.stream;
+      videoElement.play(); // Explicitly play the video for better browser compatibility
+
+      // Start decoding from the video stream
+      this.controls = await this.reader.decodeFromStream(this.stream, videoElement, (result, err) => {
+        if (result) {
+          const qrData = this.processQrCode(result.getText());
+          if (qrData) {
+             const resultPoints = result.getResultPoints();
+             if (resultPoints.length >= 3) {
+                 this.activeQr.set({
+                    text: result.getText(),
+                    location: {
+                        bottomLeft: resultPoints[0],
+                        topLeft: resultPoints[1],
+                        topRight: resultPoints[2],
+                        // Handle cases where only 3 points are detected
+                        bottomRight: resultPoints[3] || resultPoints[0], 
+                    },
+                    status: qrData.status,
+                    lastSeen: Date.now(),
+                });
+             }
+          }
+        }
+        // We don't need to handle NotFoundException here as it's not a terminal error
+      });
+
+      // Start the drawing loop
+      this.animationFrameId = requestAnimationFrame(() => this.drawLoop());
+
+    } catch (e: any) {
+      console.error('Error starting scanner:', e);
+      let message = 'Could not start the camera.';
+      if (e.name === 'NotAllowedError') {
+        message = 'Camera access was denied. Please allow camera permission in your browser settings.';
+      } else if (e.name === 'NotFoundError') {
+        message = 'No camera found on this device.';
       }
-    } else {
-        this.scanError.set('Camera not supported by this browser.');
+      this.error.set(message);
+      this.isScanning.set(false);
     }
   }
 
-  stopScan() {
-    this.isScanning.set(false);
-    if (this.stream) {
-      this.stream.getTracks().forEach(track => track.stop());
+  stopScan(): void {
+    if (this.controls) {
+      this.controls.stop();
+      this.controls = null;
+    }
+    if(this.stream) {
+        this.stream.getTracks().forEach(track => track.stop());
+        this.stream = null;
     }
     if (this.animationFrameId) {
-        cancelAnimationFrame(this.animationFrameId);
+      cancelAnimationFrame(this.animationFrameId);
+      this.animationFrameId = null;
+    }
+    this.isScanning.set(false);
+    this.activeQr.set(null);
+    this.overlay.set(null);
+    
+    const canvas = this.canvasEl?.nativeElement;
+    if (canvas) {
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+      }
     }
   }
 
-  tick() {
-    if (this.video.nativeElement.readyState === this.video.nativeElement.HAVE_ENOUGH_DATA) {
-      const canvasElement = this.canvas.nativeElement;
-      const context = canvasElement.getContext('2d');
-      if(context){
-        canvasElement.height = this.video.nativeElement.videoHeight;
-        canvasElement.width = this.video.nativeElement.videoWidth;
-        context.drawImage(this.video.nativeElement, 0, 0, canvasElement.width, canvasElement.height);
-        const imageData = context.getImageData(0, 0, canvasElement.width, canvasElement.height);
-        const code = jsQR(imageData.data, imageData.width, imageData.height, {
-          inversionAttempts: 'dontInvert',
-        });
+  private drawLoop(): void {
+    const canvas = this.canvasEl.nativeElement;
+    const video = this.videoEl.nativeElement;
+    const ctx = canvas.getContext('2d');
 
-        if (code) {
-          this.ngZone.run(() => {
-            this.processQrCode(code.data);
-            this.stopScan();
-          });
-          return;
+    if (!ctx || !this.isScanning()) {
+      return;
+    }
+
+    if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+    }
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    const currentQr = this.activeQr();
+    if (currentQr) {
+      if (Date.now() - currentQr.lastSeen > 300) {
+        this.activeQr.set(null);
+        this.overlay.set(null);
+      } else {
+        const newOverlay = this.createOverlay(currentQr);
+        
+        const oldOverlay = this.overlay();
+        if (oldOverlay && oldOverlay.points.length === newOverlay.points.length) {
+            newOverlay.points.forEach((point, i) => {
+                point.x = this.lerp(oldOverlay.points[i].x, point.x, 0.3);
+                point.y = this.lerp(oldOverlay.points[i].y, point.y, 0.3);
+            });
         }
+        this.overlay.set(newOverlay);
       }
     }
-    this.animationFrameId = requestAnimationFrame(() => this.tick());
-  }
 
-  private processQrCode(data: string) {
-    this.scanError.set(null); // Clear any previous camera errors
-
-    // Attempt 1: Parse as JSON
-    try {
-      const parsedData: any = JSON.parse(data);
-      
-      const productId = parsedData.productId || parsedData.pid;
-      const name = parsedData.name;
-      const expiryDate = parsedData.expiryDate || parsedData.expiry;
-
-      if (productId && name && expiryDate) {
-        const productData: ProductData = {
-          productId,
-          name,
-          expiryDate,
-        };
-        this.scanResult.set(productData);
-        this.checkProductStatus(productData.expiryDate);
-        return; // Success
-      }
-    } catch (e) {
-      // JSON parsing failed, proceed to next attempt
+    const currentOverlay = this.overlay();
+    if (currentOverlay) {
+        this.drawPolygon(ctx, currentOverlay.points, currentOverlay.color);
     }
-
-    // Attempt 2: Check if the data is a valid date string
-    const potentialDate = new Date(data);
-    if (!isNaN(potentialDate.getTime()) && /\d/.test(data)) {
-      const mockProductData: ProductData = {
-        productId: 'N/A',
-        name: 'Product (from date)',
-        // Use ISO format YYYY-MM-DD for consistency
-        expiryDate: potentialDate.toISOString().split('T')[0]
-      };
-      this.scanResult.set(mockProductData);
-      this.checkProductStatus(mockProductData.expiryDate);
-      return; // Success
-    }
-
-    // If all attempts fail, it's invalid
-    this.scanResult.set(null);
-    this.productStatus.set('invalid');
-    console.error('Invalid QR code data format:', data);
+    
+    this.animationFrameId = requestAnimationFrame(() => this.drawLoop());
   }
   
-  private checkProductStatus(expiryDateStr: string) {
-    const flightInfo = this.flightContextService.flightData();
+  private createOverlay(qr: TrackedQR): QrOverlay {
+    const colorMap = {
+      good: 'rgba(34, 197, 94, 0.7)',    // green-500
+      warning: 'rgba(234, 179, 8, 0.7)',   // yellow-500
+      expired: 'rgba(239, 68, 68, 0.7)', // red-500
+    };
+    
+    return {
+        points: [
+            qr.location.topLeft,
+            qr.location.topRight,
+            qr.location.bottomRight,
+            qr.location.bottomLeft,
+        ],
+        color: colorMap[qr.status]
+    };
+  }
 
-    // Determine the "nearing expiry" threshold based on flight context
-    let nearingExpiryThresholdDays = 7; // Default
-    if (flightInfo.type === 'International') {
-      // Use a longer threshold for long-haul flights on wide-body aircraft
-      if (/(777|787|350|380)/.test(flightInfo.aircraft)) {
-        nearingExpiryThresholdDays = 14;
-      } else {
-        nearingExpiryThresholdDays = 10;
+  private drawPolygon(ctx: CanvasRenderingContext2D, points: {x:number, y:number}[], color: string) {
+    if (points.length < 3) return;
+    
+    ctx.lineWidth = 6;
+    ctx.strokeStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(points[0].x, points[0].y);
+    for (let i = 1; i < points.length; i++) {
+        ctx.lineTo(points[i].x, points[i].y);
+    }
+    ctx.closePath();
+    ctx.stroke();
+  }
+  
+  private lerp(start: number, end: number, amt: number): number {
+    return (1 - amt) * start + amt * end;
+  }
+
+  private processQrCode(qrText: string): { status: 'good' | 'warning' | 'expired' } | null {
+    try {
+      let expiryDateStr: string | null = null;
+      try {
+        const data = JSON.parse(qrText);
+        expiryDateStr = data.expiry || data.expiryDate || data.exp || null;
+      } catch (e) {
+        if (/^\d{4}-\d{2}-\d{2}$/.test(qrText)) {
+            expiryDateStr = qrText;
+        }
       }
-    } else { // Domestic flights have a shorter turnover
-      nearingExpiryThresholdDays = 5;
-    }
-    
-    const expiryDate = new Date(expiryDateStr);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0); // Normalize to start of day
-    
-    const thresholdDate = new Date();
-    thresholdDate.setDate(today.getDate() + nearingExpiryThresholdDays);
-    thresholdDate.setHours(0, 0, 0, 0);
 
-    if (isNaN(expiryDate.getTime())) {
-        this.productStatus.set('invalid');
-        return;
-    }
+      if (!expiryDateStr) return null;
 
-    if (expiryDate < today) {
-      this.productStatus.set('expired');
-    } else if (expiryDate <= thresholdDate) {
-      this.productStatus.set('nearing_expiry');
-    } else {
-      this.productStatus.set('ok');
+      const expiryDate = new Date(expiryDateStr);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      const diffTime = expiryDate.getTime() - today.getTime();
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      
+      const status = this.checkProductStatus(diffDays);
+      return { status };
+
+    } catch (e) {
+      console.error("Invalid QR code data format", e);
+      return null;
     }
   }
 
-  ngOnDestroy() {
-    this.stopScan();
+  private checkProductStatus(daysUntilExpiry: number): 'good' | 'warning' | 'expired' {
+    const flightData = this.flightContextService.flightData();
+    let warningThreshold = 5; // Default for domestic
+
+    if (flightData.type === 'International') {
+      const isLongHaul = ['Boeing 777', 'Airbus A350', 'Boeing 787', '777', 'A350', '787'].some(plane => flightData.aircraft.includes(plane));
+      warningThreshold = isLongHaul ? 14 : 10;
+    }
+
+    if (daysUntilExpiry < 0) {
+      return 'expired';
+    }
+    if (daysUntilExpiry <= warningThreshold) {
+      return 'warning';
+    }
+    return 'good';
   }
 }

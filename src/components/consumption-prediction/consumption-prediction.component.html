@@ -58,14 +58,51 @@
     </form>
   </div>
 
-  @if (predictionResult().length > 0) {
+  @if (predictionResult(); as result) {
     <div class="mt-6 bg-white p-6 rounded-lg shadow-md">
-      <h3 class="text-lg font-medium text-slate-900 mb-2">Prediction Result</h3>
-      <ul class="list-disc list-inside space-y-1 text-slate-700">
-        @for (item of predictionResult(); track item) {
-          <li>{{ item }}</li>
-        }
-      </ul>
+      <h3 class="text-lg font-semibold text-slate-900 mb-4 border-b pb-2">Forecast Summary</h3>
+      
+      <div class="grid grid-cols-2 gap-x-4 gap-y-2 text-sm text-slate-700 mb-4">
+        <div class="font-semibold">Route:</div>
+        <div>{{ result.route }}</div>
+        
+        <div class="font-semibold">Flight Type:</div>
+        <div>{{ result.flight_type }} ({{ flightContextService.flightData().duration }} hrs)</div>
+        
+        <div class="font-semibold">Season:</div>
+        <div>{{ result.season }}</div>
+        
+        <div class="font-semibold">Temperature:</div>
+        <div>{{ result.temperature }}°C</div>
+
+        <div class="font-semibold">Passengers:</div>
+        <div>{{ result.passengers }}</div>
+      </div>
+
+      <h4 class="text-md font-semibold text-slate-800 mt-4 mb-2">Recommended Items</h4>
+      <div class="overflow-x-auto">
+        <table class="min-w-full divide-y divide-slate-200">
+          <thead class="bg-slate-50">
+            <tr>
+              <th scope="col" class="px-4 py-2 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Item</th>
+              <th scope="col" class="px-4 py-2 text-center text-xs font-medium text-slate-500 uppercase tracking-wider">Quantity</th>
+              <th scope="col" class="px-4 py-2 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Reason</th>
+            </tr>
+          </thead>
+          <tbody class="bg-white divide-y divide-slate-200">
+            @for (item of result.recommendations; track item.item) {
+              <tr class="hover:bg-slate-50">
+                <td class="px-4 py-3 whitespace-nowrap text-sm font-medium text-slate-900">{{ item.item }}</td>
+                <td class="px-4 py-3 whitespace-nowrap text-sm text-slate-600 text-center">{{ item.quantity }}</td>
+                <td class="px-4 py-3 whitespace-normal text-sm text-slate-600">{{ item.reason }}</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+       <p class="text-xs text-slate-500 mt-3 text-right">
+        {{ result.safety_buffer_policy }}
+      </p>
     </div>
   }
   @if (error()) {
