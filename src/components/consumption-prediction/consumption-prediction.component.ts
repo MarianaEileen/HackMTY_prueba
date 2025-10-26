@@ -1,8 +1,8 @@
-
 import { Component, ChangeDetectionStrategy, signal, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { GeminiService, FlightData } from '../../services/gemini.service';
+import { GeminiService } from '../../services/gemini.service';
+import { FlightContextService } from '../../services/flight-context.service';
 
 @Component({
   selector: 'app-consumption-prediction',
@@ -12,17 +12,8 @@ import { GeminiService, FlightData } from '../../services/gemini.service';
 })
 export class ConsumptionPredictionComponent {
   private geminiService = inject(GeminiService);
-
-  flightData = signal<FlightData>({
-    type: 'International',
-    origin: 'JFK',
-    destination: 'LHR',
-    aircraft: 'Boeing 777',
-    season: 'Summer',
-    temperature: 25,
-    duration: 7,
-    passengers: 250
-  });
+  // Inject the shared flight context service and make it public for template binding
+  flightContextService = inject(FlightContextService);
 
   predictionResult = signal<string[]>([]);
   isLoading = signal(false);
@@ -33,7 +24,8 @@ export class ConsumptionPredictionComponent {
     this.error.set(null);
     this.predictionResult.set([]);
     try {
-      const resultText = await this.geminiService.getConsumptionPrediction(this.flightData());
+      // Use the flight data from the shared service for the prediction
+      const resultText = await this.geminiService.getConsumptionPrediction(this.flightContextService.flightData());
       this.predictionResult.set(resultText.split('\n').filter(line => line.trim() !== ''));
     } catch (e) {
       this.error.set('Failed to fetch prediction.');

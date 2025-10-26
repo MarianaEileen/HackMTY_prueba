@@ -1,5 +1,6 @@
-import { Component, ChangeDetectionStrategy, signal, OnDestroy, AfterViewInit, ViewChild, ElementRef, NgZone } from '@angular/core';
+import { Component, ChangeDetectionStrategy, signal, OnDestroy, AfterViewInit, ViewChild, ElementRef, NgZone, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { FlightContextService } from '../../services/flight-context.service';
 
 declare var jsQR: any;
 
@@ -28,6 +29,7 @@ export class ExpiryScannerComponent implements AfterViewInit, OnDestroy {
   
   private stream: MediaStream | null = null;
   private animationFrameId: number | null = null;
+  private flightContextService = inject(FlightContextService);
 
   constructor(private ngZone: NgZone) {}
 
@@ -142,13 +144,28 @@ export class ExpiryScannerComponent implements AfterViewInit, OnDestroy {
   }
   
   private checkProductStatus(expiryDateStr: string) {
+    const flightInfo = this.flightContextService.flightData();
+
+    // Determine the "nearing expiry" threshold based on flight context
+    let nearingExpiryThresholdDays = 7; // Default
+    if (flightInfo.type === 'International') {
+      // Use a longer threshold for long-haul flights on wide-body aircraft
+      if (/(777|787|350|380)/.test(flightInfo.aircraft)) {
+        nearingExpiryThresholdDays = 14;
+      } else {
+        nearingExpiryThresholdDays = 10;
+      }
+    } else { // Domestic flights have a shorter turnover
+      nearingExpiryThresholdDays = 5;
+    }
+    
     const expiryDate = new Date(expiryDateStr);
     const today = new Date();
     today.setHours(0, 0, 0, 0); // Normalize to start of day
     
-    const sevenDaysFromNow = new Date();
-    sevenDaysFromNow.setDate(today.getDate() + 7);
-    sevenDaysFromNow.setHours(0, 0, 0, 0);
+    const thresholdDate = new Date();
+    thresholdDate.setDate(today.getDate() + nearingExpiryThresholdDays);
+    thresholdDate.setHours(0, 0, 0, 0);
 
     if (isNaN(expiryDate.getTime())) {
         this.productStatus.set('invalid');
@@ -157,7 +174,7 @@ export class ExpiryScannerComponent implements AfterViewInit, OnDestroy {
 
     if (expiryDate < today) {
       this.productStatus.set('expired');
-    } else if (expiryDate <= sevenDaysFromNow) {
+    } else if (expiryDate <= thresholdDate) {
       this.productStatus.set('nearing_expiry');
     } else {
       this.productStatus.set('ok');
