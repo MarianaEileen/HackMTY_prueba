@@ -1,0 +1,39 @@
+
+<div class="flex flex-col h-screen font-sans">
+  <header class="bg-sky-800 text-white shadow-md">
+    <div class="container mx-auto px-4 py-4">
+      <h1 class="text-2xl font-bold text-center">Gate Group Ops Standard</h1>
+    </div>
+  </header>
+
+  <main class="flex-grow overflow-y-auto bg-slate-50 p-4">
+    @switch (activeView()) {
+      @case ('prediction') {
+        <app-consumption-prediction />
+      }
+      @case ('scanner') {
+        <app-expiry-scanner />
+      }
+      @case ('productivity') {
+        <app-productivity-forecast />
+      }
+    }
+  </main>
+
+  <nav class="bg-white border-t border-slate-200 shadow-lg">
+    <div class="max-w-md mx-auto grid grid-cols-3 gap-2 px-2 py-2">
+      <button (click)="setView('prediction')" [class]="activeView() === 'prediction' ? 'bg-sky-100 text-sky-700' : 'text-slate-600 hover:bg-slate-100'" class="flex flex-col items-center justify-center p-2 rounded-lg transition-colors duration-200">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" /></svg>
+        <span class="text-xs font-medium mt-1">Prediction</span>
+      </button>
+      <button (click)="setView('scanner')" [class]="activeView() === 'scanner' ? 'bg-sky-100 text-sky-700' : 'text-slate-600 hover:bg-slate-100'" class="flex flex-col items-center justify-center p-2 rounded-lg transition-colors duration-200">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>
+        <span class="text-xs font-medium mt-1">QR Scan</span>
+      </button>
+      <button (click)="setView('productivity')" [class]="activeView() === 'productivity' ? 'bg-sky-100 text-sky-700' : 'text-slate-600 hover:bg-slate-100'" class="flex flex-col items-center justify-center p-2 rounded-lg transition-colors duration-200">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+        <span class="text-xs font-medium mt-1">Productivity</span>
+      </button>
+    </div>
+  </nav>
+</div>

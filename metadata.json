@@ -1,0 +1,7 @@
+{
+  "name": "Gate Group Ops Standard",
+  "description": "An application for Gate Group to standardize key catering operations: consumption prediction, expiry date management via QR scanning, and productivity estimation.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}

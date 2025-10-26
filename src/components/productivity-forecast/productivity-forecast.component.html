@@ -1,0 +1,37 @@
+
+<div class="max-w-md mx-auto">
+  <div class="bg-white p-6 rounded-lg shadow-md">
+    <h2 class="text-xl font-semibold text-slate-800 mb-4 text-center">Productivity Estimation</h2>
+    <p class="text-sm text-slate-600 mb-4">
+      Enter the items for a trolley or drawer, one per line, to estimate the assembly time.
+    </p>
+    <form (ngSubmit)="getForecast()">
+      <div>
+        <label for="trolleyItems" class="block text-sm font-medium text-slate-600">Trolley Contents</label>
+        <textarea id="trolleyItems" name="trolleyItems" [(ngModel)]="trolleyItems" rows="8" class="mt-1 block w-full border border-slate-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-sky-500 focus:border-sky-500 sm:text-sm" placeholder="e.g.,&#10;20x Chicken Sandwiches&#10;20x Vegetarian Wraps&#10;40x Water Bottles&#10;30x Orange Juice Cartons"></textarea>
+      </div>
+      <button type="submit" [disabled]="isLoading()" class="mt-4 w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-sky-600 hover:bg-sky-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-sky-500 disabled:bg-slate-400">
+        @if (isLoading()) {
+          <span class="animate-spin h-5 w-5 mr-3" viewBox="0 0 24 24">...</span>
+          <span>Estimating...</span>
+        } @else {
+          <span>Estimate Assembly Time</span>
+        }
+      </button>
+    </form>
+  </div>
+
+  @if (forecastResult()) {
+    <div class="mt-6 bg-white p-6 rounded-lg shadow-md text-center">
+      <h3 class="text-lg font-medium text-slate-900 mb-2">Estimated Assembly Time</h3>
+      <p class="text-4xl font-bold text-sky-600">{{ forecastResult() }}</p>
+      <p class="text-xs text-slate-500 mt-2">Powered by LightGBM Simulation Model</p>
+    </div>
+  }
+  @if (error()) {
+    <div class="mt-6 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-lg shadow-md" role="alert">
+      <strong class="font-bold">Error:</strong>
+      <span class="block sm:inline">{{ error() }}</span>
+    </div>
+  }
+</div>
